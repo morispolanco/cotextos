@@ -6,4 +6,4 @@ pytils
 nltk 
 python-punctuator 
 spacy
-python -m spacy download es_core_news_sm
+es_core_news_sm
