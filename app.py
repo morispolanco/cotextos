@@ -189,7 +189,7 @@ def main():
                     st.success("Archivo de texto cargado exitosamente.")
                 except UnicodeDecodeError:
                     st.error("Error al decodificar el archivo. Asegúrate de que esté en formato UTF-8.")
-        
+         
         elif seleccion == "Pegar Texto":
             texto_procesar = st.text_area("Pega tu texto aquí:", height=300)
         
