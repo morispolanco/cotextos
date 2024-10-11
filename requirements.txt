@@ -1,5 +1,6 @@
 streamlit
 python-docx
-language-tool-python
+transformers
+torch
 textblob
 nltk
