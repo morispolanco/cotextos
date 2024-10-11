@@ -7,8 +7,10 @@ import pytils
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
-from punctuator import Punctuator
+from transformers import AutoModelForTokenClassification, AutoTokenizer
+from transformers import pipeline
 import re
+import torch
 
 # Descargar recursos necesarios para nltk y textblob
 nltk.download('punkt')
@@ -16,11 +18,20 @@ nltk.download('stopwords')
 
 # Inicializar herramientas
 tool = language_tool_python.LanguageTool('es')
-punctuator_model = 'models/spanish.pcl'  # Reemplaza con la ruta a tu modelo de punctuator
-try:
-    punctuator = Punctuator(punctuator_model)
-except Exception as e:
-    st.error(f"Error al cargar el modelo de punctuator: {e}")
+
+# Inicializar el modelo de Hugging Face para restauración de puntuación
+@st.cache_resource
+def cargar_modelo_puntuacion():
+    try:
+        tokenizer = AutoTokenizer.from_pretrained("oliverguhr/fullstop-punctuation-multilang-large")
+        model = AutoModelForTokenClassification.from_pretrained("oliverguhr/fullstop-punctuation-multilang-large")
+        pipe = pipeline("text-classification", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
+        return pipe
+    except Exception as e:
+        st.error(f"Error al cargar el modelo de puntuación: {e}")
+        return None
+
+punctuator = cargar_modelo_puntuacion()
 
 # Función para corregir errores ortográficos
 def corregir_ortografia(texto):
@@ -53,11 +64,20 @@ def eliminar_repeticiones(texto):
     texto_corregido = ' '.join(palabras_filtradas)
     return texto_corregido
 
-# Función para corregir puntuación
+# Función para corregir puntuación utilizando el modelo de Hugging Face
 def corregir_puntuacion(texto):
+    if punctuator is None:
+        st.error("El modelo de puntuación no está disponible.")
+        return texto
     try:
-        texto_corregido = punctuator.punctuate(texto)
-        return texto_corregido
+        # El modelo puede tener un límite de tokens, por lo que es recomendable dividir el texto en bloques
+        max_length = 512  # Ajusta según las limitaciones del modelo
+        bloques = [texto[i:i+max_length] for i in range(0, len(texto), max_length)]
+        texto_corregido = ""
+        for bloque in bloques:
+            resultado = punctuator(bloque)
+            texto_corregido += resultado[0]['label'] + " " if resultado else bloque
+        return texto_corregido.strip()
     except Exception as e:
         st.error(f"Error al corregir la puntuación: {e}")
         return texto
