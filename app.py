@@ -5,32 +5,18 @@ from textblob import TextBlob
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
-from transformers import pipeline
+import requests
 import re
 
 # Descargar recursos necesarios para nltk y textblob
 nltk.download('punkt')
 nltk.download('stopwords')
 
-# Inicializar el modelo de corrección gramatical de Hugging Face
-@st.cache_resource
-def cargar_modelo_correccion():
-    try:
-        # Puedes usar otros modelos de Hugging Face especializados en español
-        modelo = pipeline("text2text-generation", model="mrm8488/t5-base-finetuned-spanish-corrector")
-        return modelo
-    except Exception as e:
-        st.error(f"Error al cargar el modelo de corrección: {e}")
-        return None
+# Configuración del API de LanguageTool
+LANGUAGE_TOOL_API_URL = "https://api.languagetool.org/v2/check"
 
-modelo_correccion = cargar_modelo_correccion()
-
-# Función para corregir errores ortográficos, acentos, capitalización, repetición de palabras y puntuación
+# Función para corregir texto usando el API público de LanguageTool
 def corregir_texto(texto):
-    if modelo_correccion is None:
-        st.error("El modelo de corrección no está disponible.")
-        return texto
-
     # Separar el texto en partes dentro y fuera de comillas
     partes = separar_citas(texto)
     texto_corregido = ""
@@ -42,25 +28,66 @@ def corregir_texto(texto):
         else:
             # Aplicar correcciones al texto fuera de comillas
             try:
-                # Corrección con el modelo de Hugging Face
-                corregido = modelo_correccion(parte)[0]['generated_text']
-                
-                # Corrección de acentos con TextBlob
-                blob = TextBlob(corregido)
-                corregido = str(blob.correct())
-                
-                # Corrección de capitalización
-                corregido = capitalizar_primer_caracter(corregido)
-                
-                # Eliminación de repeticiones de palabras
-                corregido = eliminar_repeticiones(corregido)
-                
+                texto_corregido += corregir_segmento(parte)
             except Exception as e:
                 st.error(f"Error al corregir el texto: {e}")
-                corregido = parte  # Mantener el texto original en caso de error
-            texto_corregido += corregido
+                texto_corregido += parte  # Mantener el texto original en caso de error
 
     return texto_corregido
+
+# Función para corregir un segmento de texto usando el API de LanguageTool
+def corregir_segmento(texto):
+    payload = {
+        'text': texto,
+        'language': 'es',
+        'enabledOnly': False,
+        'removeDuplicates': 'true'
+    }
+
+    response = requests.post(LANGUAGE_TOOL_API_URL, data=payload)
+
+    if response.status_code != 200:
+        raise Exception(f"Error en la API de LanguageTool: {response.status_code} - {response.text}")
+
+    resultado = response.json()
+
+    matches = resultado.get('matches', [])
+
+    # Aplicar correcciones de atrás hacia adelante para no alterar los índices
+    texto_modificado = texto
+    offset_correction = 0  # Corrección acumulada de los offsets debido a cambios en el texto
+
+    for match in sorted(matches, key=lambda x: x['offset']):
+        offset = match['offset'] + offset_correction
+        length = match['length']
+        replacements = match.get('replacements', [])
+
+        if not replacements:
+            continue  # No hay sugerencias de corrección
+
+        replacement = replacements[0]['value']
+
+        # Reemplazar el texto en el rango especificado
+        texto_modificado = (
+            texto_modificado[:offset] +
+            replacement +
+            texto_modificado[offset + length:]
+        )
+
+        # Actualizar la corrección acumulada
+        offset_correction += len(replacement) - length
+
+    # Corrección de acentos con TextBlob
+    blob = TextBlob(texto_modificado)
+    texto_corregido_final = str(blob.correct())
+
+    # Corrección de capitalización
+    texto_corregido_final = capitalizar_primer_caracter(texto_corregido_final)
+
+    # Eliminación de repeticiones de palabras
+    texto_corregido_final = eliminar_repeticiones(texto_corregido_final)
+
+    return texto_corregido_final
 
 # Función para eliminar repeticiones de palabras
 def eliminar_repeticiones(texto):
@@ -83,7 +110,7 @@ def separar_citas(texto):
     partes = re.split(pattern, texto)
     return partes
 
-# Función para capitalizar la primera letra de cada párrafo sin alterar el resto
+# Función para capitalizar la primera letra de un texto
 def capitalizar_primer_caracter(texto):
     if not texto:
         return texto
