@@ -1,7 +1,7 @@
 import streamlit as st
 from docx import Document
 from io import BytesIO
-import language_tool_python
+import requests
 from textblob import TextBlob
 import pytils
 import nltk
@@ -14,52 +14,55 @@ import re
 nltk.download('punkt')
 nltk.download('stopwords')
 
-# Inicializar herramientas
-# Usar el API público gratuito de LanguageTool
-try:
-    tool = language_tool_python.LanguageTool('es', host='https://api.languagetool.org/v2/')
-except Exception as e:
-    st.error(f"Error al inicializar LanguageTool: {e}")
-    tool = None
+# Configuración del API de LanguageTool
+LANGUAGE_TOOL_API_URL = "https://api.languagetool.org/v2/check"
 
-# Función para corregir errores ortográficos, acentos, capitalización, repetición de palabras y puntuación
-def corregir_texto(texto):
-    if tool is None:
-        st.error("LanguageTool no está disponible.")
-        return texto
-
-    # Separar el texto en partes dentro y fuera de comillas
-    partes = separar_citas(texto)
-    texto_corregido = ""
+# Función para corregir errores ortográficos y gramaticales usando el API público de LanguageTool
+def corregir_texto_languagetool(texto):
+    if not texto.strip():
+        return texto  # Retornar el texto original si está vacío o solo contiene espacios
     
-    for parte in partes:
-        # Si la parte está dentro de comillas, no se corrige
-        if re.match(r'(\".*?\"|“.*?”|‘.*?’)', parte):
-            texto_corregido += parte
-        else:
-            # Aplicar correcciones al texto fuera de comillas
-            try:
-                # Corrección con LanguageTool
-                matches = tool.check(parte)
-                parte = language_tool_python.utils.correct(parte, matches)
-                
-                # Corrección de acentos con TextBlob
-                blob = TextBlob(parte)
-                parte = str(blob.correct())
-                
-                # Corrección de capitalización
-                parte = pytils.strings.capitalize(parte)
-                
-                # Eliminación de repeticiones de palabras
-                parte = eliminar_repeticiones(parte)
-                
-                # Nota: La restauración avanzada de puntuación (agregar faltantes) no se implementa aquí
-                # Ya que depende de modelos más complejos
-            except Exception as e:
-                st.error(f"Error al corregir el texto: {e}")
-            texto_corregido += parte
+    try:
+        # Preparar los datos para la solicitud
+        data = {
+            'text': texto,
+            'language': 'es',
+            'enabledOnly': False,
+            'applySpelling': True,
+            'applyGrammar': True,
+        }
+        
+        # Realizar la solicitud POST al API
+        response = requests.post(LANGUAGE_TOOL_API_URL, data=data)
+        
+        # Verificar el estado de la respuesta
+        if response.status_code != 200:
+            st.error(f"Error al conectarse con LanguageTool API: {response.status_code} - {response.text}")
+            return texto  # Retornar el texto original en caso de error
+        
+        result = response.json()
+        corrections = result.get('matches', [])
+        
+        # Aplicar las correcciones al texto
+        texto_corregido = aplicar_correcciones(texto, corrections)
+        return texto_corregido
+    
+    except Exception as e:
+        st.error(f"Excepción al corregir el texto: {e}")
+        return texto  # Retornar el texto original en caso de excepción
 
-    return texto_corregido
+# Función para aplicar las correcciones proporcionadas por LanguageTool al texto
+def aplicar_correcciones(texto, correcciones):
+    # Ordenar las correcciones de fin a inicio para no afectar los índices al reemplazar
+    correcciones_sorted = sorted(correcciones, key=lambda x: x['offset'] + x['length'], reverse=True)
+    
+    for correccion in correcciones_sorted:
+        inicio = correccion['offset']
+        fin = inicio + correccion['length']
+        reemplazo = correccion.get('replacement', '')
+        texto = texto[:inicio] + reemplazo + texto[fin:]
+    
+    return texto
 
 # Función para eliminar repeticiones de palabras
 def eliminar_repeticiones(texto):
@@ -81,6 +84,40 @@ def separar_citas(texto):
     pattern = r'(\".*?\"|“.*?”|‘.*?’)'
     partes = re.split(pattern, texto)
     return partes
+
+# Función para corregir el texto
+def corregir_texto(texto):
+    # Separar el texto en partes dentro y fuera de comillas
+    partes = separar_citas(texto)
+    texto_corregido = ""
+    
+    for parte in partes:
+        # Si la parte está dentro de comillas, no se corrige
+        if re.match(r'(\".*?\"|“.*?”|‘.*?’)', parte):
+            texto_corregido += parte
+        else:
+            # Aplicar correcciones al texto fuera de comillas
+            try:
+                # Corrección con LanguageTool
+                parte = corregir_texto_languagetool(parte)
+                
+                # Corrección de acentos con TextBlob (opcional, ya que LanguageTool maneja esto)
+                blob = TextBlob(parte)
+                parte = str(blob.correct())
+                
+                # Corrección de capitalización
+                parte = pytils.strings.capitalize(parte)
+                
+                # Eliminación de repeticiones de palabras
+                parte = eliminar_repeticiones(parte)
+                
+                # Nota: La restauración avanzada de puntuación (agregar faltantes) no se implementa aquí
+                # Ya que depende de modelos más complejos
+            except Exception as e:
+                st.error(f"Error al corregir el texto: {e}")
+            texto_corregido += parte
+
+    return texto_corregido
 
 # Función principal para procesar el documento .docx
 def procesar_documento(doc_bytes):
