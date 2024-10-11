@@ -1,0 +1,9 @@
+streamlit 
+python-docx 
+language-tool-python 
+textblob 
+pytils 
+nltk 
+python-punctuator 
+spacy
+python -m spacy download es_core_news_sm
