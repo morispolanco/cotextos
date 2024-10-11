@@ -4,4 +4,5 @@ language-tool-python
 textblob 
 pytils 
 nltk 
-python-punctuator
+transformers 
+torch
