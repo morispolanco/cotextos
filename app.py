@@ -15,11 +15,19 @@ nltk.download('punkt')
 nltk.download('stopwords')
 
 # Inicializar herramientas
-# Usar el API público de LanguageTool
-tool = language_tool_python.LanguageTool('es', host='https://api.languagetoolplus.com')
+# Usar el API público gratuito de LanguageTool
+try:
+    tool = language_tool_python.LanguageTool('es', host='https://api.languagetool.org/v2/')
+except Exception as e:
+    st.error(f"Error al inicializar LanguageTool: {e}")
+    tool = None
 
 # Función para corregir errores ortográficos, acentos, capitalización, repetición de palabras y puntuación
 def corregir_texto(texto):
+    if tool is None:
+        st.error("LanguageTool no está disponible.")
+        return texto
+
     # Separar el texto en partes dentro y fuera de comillas
     partes = separar_citas(texto)
     texto_corregido = ""
@@ -50,7 +58,7 @@ def corregir_texto(texto):
             except Exception as e:
                 st.error(f"Error al corregir el texto: {e}")
             texto_corregido += parte
-    
+
     return texto_corregido
 
 # Función para eliminar repeticiones de palabras
