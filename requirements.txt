@@ -1,6 +1,6 @@
 streamlit
 python-docx
-language-tool-python
+requests
 textblob
 pytils
 nltk
