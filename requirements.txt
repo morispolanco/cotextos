@@ -5,5 +5,4 @@ textblob
 pytils 
 nltk 
 python-punctuator 
-spacy
-es_core_news_sm
+spacy es_core_news_sm
