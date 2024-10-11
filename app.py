@@ -7,10 +7,8 @@ import pytils
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
-from transformers import AutoModelForTokenClassification, AutoTokenizer
 from transformers import pipeline
 import re
-import torch
 
 # Descargar recursos necesarios para nltk y textblob
 nltk.download('punkt')
@@ -20,38 +18,39 @@ nltk.download('stopwords')
 # Usar el API público de LanguageTool
 tool = language_tool_python.LanguageTool('es', host='https://api.languagetoolplus.com')
 
-# ... resto del código sigue igual ...
-
-
-# Inicializar el modelo de Hugging Face para restauración de puntuación
-@st.cache_resource
-def cargar_modelo_puntuacion():
-    try:
-        tokenizer = AutoTokenizer.from_pretrained("oliverguhr/fullstop-punctuation-multilang-large")
-        model = AutoModelForTokenClassification.from_pretrained("oliverguhr/fullstop-punctuation-multilang-large")
-        pipe = pipeline("text-classification", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
-        return pipe
-    except Exception as e:
-        st.error(f"Error al cargar el modelo de puntuación: {e}")
-        return None
-
-punctuator = cargar_modelo_puntuacion()
-
-# Función para corregir errores ortográficos
-def corregir_ortografia(texto):
-    matches = tool.check(texto)
-    texto_corregido = language_tool_python.utils.correct(texto, matches)
-    return texto_corregido
-
-# Función para corregir acentos
-def corregir_acentos(texto):
-    blob = TextBlob(texto)
-    texto_corregido = str(blob.correct())
-    return texto_corregido
-
-# Función para corregir capitalización
-def corregir_capitalizacion(texto):
-    texto_corregido = pytils.strings.capitalize(texto)
+# Función para corregir errores ortográficos, acentos, capitalización, repetición de palabras y puntuación
+def corregir_texto(texto):
+    # Separar el texto en partes dentro y fuera de comillas
+    partes = separar_citas(texto)
+    texto_corregido = ""
+    
+    for parte in partes:
+        # Si la parte está dentro de comillas, no se corrige
+        if re.match(r'(\".*?\"|“.*?”|‘.*?’)', parte):
+            texto_corregido += parte
+        else:
+            # Aplicar correcciones al texto fuera de comillas
+            try:
+                # Corrección con LanguageTool
+                matches = tool.check(parte)
+                parte = language_tool_python.utils.correct(parte, matches)
+                
+                # Corrección de acentos con TextBlob
+                blob = TextBlob(parte)
+                parte = str(blob.correct())
+                
+                # Corrección de capitalización
+                parte = pytils.strings.capitalize(parte)
+                
+                # Eliminación de repeticiones de palabras
+                parte = eliminar_repeticiones(parte)
+                
+                # Nota: La restauración avanzada de puntuación (agregar faltantes) no se implementa aquí
+                # Ya que depende de modelos más complejos
+            except Exception as e:
+                st.error(f"Error al corregir el texto: {e}")
+            texto_corregido += parte
+    
     return texto_corregido
 
 # Función para eliminar repeticiones de palabras
@@ -68,31 +67,11 @@ def eliminar_repeticiones(texto):
     texto_corregido = ' '.join(palabras_filtradas)
     return texto_corregido
 
-# Función para corregir puntuación utilizando el modelo de Hugging Face
-def corregir_puntuacion(texto):
-    if punctuator is None:
-        st.error("El modelo de puntuación no está disponible.")
-        return texto
-    try:
-        # El modelo puede tener un límite de tokens, por lo que es recomendable dividir el texto en bloques
-        max_length = 512  # Ajusta según las limitaciones del modelo
-        bloques = [texto[i:i+max_length] for i in range(0, len(texto), max_length)]
-        texto_corregido = ""
-        for bloque in bloques:
-            resultado = punctuator(bloque)
-            texto_corregido += resultado[0]['label'] + " " if resultado else bloque
-        return texto_corregido.strip()
-    except Exception as e:
-        st.error(f"Error al corregir la puntuación: {e}")
-        return texto
-
 # Función para separar texto dentro y fuera de comillas
 def separar_citas(texto):
     # Expresión regular para encontrar textos entre comillas simples o dobles
     pattern = r'(\".*?\"|“.*?”|‘.*?’)'
     partes = re.split(pattern, texto)
-    # La lista resultante alterna entre texto fuera de comillas y dentro
-    # Se procesa solo el texto que no está dentro de comillas
     return partes
 
 # Función principal para procesar el documento .docx
@@ -106,25 +85,8 @@ def procesar_documento(doc_bytes):
         if texto_original.strip() == '':
             continue  # Salta párrafos vacíos
         
-        # Separar el texto en partes dentro y fuera de comillas
-        partes = separar_citas(texto_original)
-        texto_corregido = ""
-        
-        for parte in partes:
-            # Si la parte está dentro de comillas, no se corrige
-            if re.match(r'(\".*?\"|“.*?”|‘.*?’)', parte):
-                texto_corregido += parte
-            else:
-                # Aplicar correcciones al texto fuera de comillas
-                try:
-                    parte = corregir_ortografia(parte)
-                    parte = corregir_acentos(parte)
-                    parte = corregir_capitalizacion(parte)
-                    parte = eliminar_repeticiones(parte)
-                    parte = corregir_puntuacion(parte)
-                except Exception as e:
-                    st.error(f"Error al corregir el texto: {e}")
-                texto_corregido += parte
+        # Corregir el texto del párrafo
+        texto_corregido = corregir_texto(texto_original)
         
         # Reemplazar el texto del párrafo con el texto corregido
         para.text = texto_corregido
