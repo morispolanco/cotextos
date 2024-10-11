@@ -5,11 +5,10 @@ import language_tool_python
 from textblob import TextBlob
 import pytils
 import nltk
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 from punctuator import Punctuator
 import re
-import spacy
 
 # Descargar recursos necesarios para nltk y textblob
 nltk.download('punkt')
@@ -22,12 +21,6 @@ try:
     punctuator = Punctuator(punctuator_model)
 except Exception as e:
     st.error(f"Error al cargar el modelo de punctuator: {e}")
-
-# Cargar el modelo de spaCy para español
-try:
-    nlp = spacy.load('es_core_news_sm')
-except Exception as e:
-    st.error(f"Error al cargar el modelo de spaCy: {e}")
 
 # Función para corregir errores ortográficos
 def corregir_ortografia(texto):
@@ -119,15 +112,15 @@ def procesar_documento(doc_bytes):
     
     return corrected_doc
 
-# Función para dividir textos largos en párrafos usando spaCy
-def dividir_en_parrafos(texto):
-    doc = nlp(texto)
+# Función para dividir textos largos en párrafos usando NLTK
+def dividir_en_parrafos(texto, max_sentencias=5):
+    # Tokenizar el texto en oraciones
+    oraciones = sent_tokenize(texto, language='spanish')
     parrafos = []
     parrafo_actual = []
-    max_sentencias = 5  # Número máximo de oraciones por párrafo (ajustable)
 
-    for sent in doc.sents:
-        parrafo_actual.append(sent.text.strip())
+    for oracion in oraciones:
+        parrafo_actual.append(oracion)
         if len(parrafo_actual) >= max_sentencias:
             parrafos.append(' '.join(parrafo_actual))
             parrafo_actual = []
@@ -193,8 +186,11 @@ def main():
             uploaded_txt = st.file_uploader("Elige un archivo `.txt`", type="txt")
             if uploaded_txt is not None:
                 bytes_data = uploaded_txt.read()
-                texto_procesar = bytes_data.decode('utf-8')
-                st.success("Archivo de texto cargado exitosamente.")
+                try:
+                    texto_procesar = bytes_data.decode('utf-8')
+                    st.success("Archivo de texto cargado exitosamente.")
+                except UnicodeDecodeError:
+                    st.error("Error al decodificar el archivo. Asegúrate de que esté en formato UTF-8.")
         
         elif seleccion == "Pegar Texto":
             texto_procesar = st.text_area("Pega tu texto aquí:", height=300)
