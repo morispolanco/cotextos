@@ -1,35 +1,40 @@
 import streamlit as st
 from docx import Document
 from io import BytesIO
-import language_tool_python
 from textblob import TextBlob
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
+from transformers import pipeline
 import re
 
 # Descargar recursos necesarios para nltk y textblob
 nltk.download('punkt')
 nltk.download('stopwords')
 
-# Inicializar herramientas
-try:
-    # Usar el API público gratuito de LanguageTool
-    tool = language_tool_python.LanguageTool('es', host='https://api.languagetool.org/v2/')
-except Exception as e:
-    st.error(f"Error al inicializar LanguageTool: {e}")
-    tool = None
+# Inicializar el modelo de corrección gramatical de Hugging Face
+@st.cache_resource
+def cargar_modelo_correccion():
+    try:
+        # Puedes usar otros modelos de Hugging Face especializados en español
+        modelo = pipeline("text2text-generation", model="mrm8488/t5-base-finetuned-spanish-corrector")
+        return modelo
+    except Exception as e:
+        st.error(f"Error al cargar el modelo de corrección: {e}")
+        return None
+
+modelo_correccion = cargar_modelo_correccion()
 
 # Función para corregir errores ortográficos, acentos, capitalización, repetición de palabras y puntuación
 def corregir_texto(texto):
-    if tool is None:
-        st.error("LanguageTool no está disponible.")
+    if modelo_correccion is None:
+        st.error("El modelo de corrección no está disponible.")
         return texto
 
     # Separar el texto en partes dentro y fuera de comillas
     partes = separar_citas(texto)
     texto_corregido = ""
-    
+
     for parte in partes:
         # Si la parte está dentro de comillas, no se corrige
         if re.match(r'(\".*?\"|“.*?”|‘.*?’)', parte):
@@ -37,25 +42,23 @@ def corregir_texto(texto):
         else:
             # Aplicar correcciones al texto fuera de comillas
             try:
-                # Corrección con LanguageTool
-                matches = tool.check(parte)
-                parte = language_tool_python.utils.correct(parte, matches)
+                # Corrección con el modelo de Hugging Face
+                corregido = modelo_correccion(parte)[0]['generated_text']
                 
                 # Corrección de acentos con TextBlob
-                blob = TextBlob(parte)
-                parte = str(blob.correct())
+                blob = TextBlob(corregido)
+                corregido = str(blob.correct())
                 
                 # Corrección de capitalización
-                parte = capitalizar_primer_caracter(parte)
+                corregido = capitalizar_primer_caracter(corregido)
                 
                 # Eliminación de repeticiones de palabras
-                parte = eliminar_repeticiones(parte)
+                corregido = eliminar_repeticiones(corregido)
                 
-                # Nota: La restauración avanzada de puntuación (agregar faltantes) no se implementa aquí
-                # Ya que depende de modelos más complejos
             except Exception as e:
                 st.error(f"Error al corregir el texto: {e}")
-            texto_corregido += parte
+                corregido = parte  # Mantener el texto original en caso de error
+            texto_corregido += corregido
 
     return texto_corregido
 
@@ -189,7 +192,7 @@ def main():
                     st.success("Archivo de texto cargado exitosamente.")
                 except UnicodeDecodeError:
                     st.error("Error al decodificar el archivo. Asegúrate de que esté en formato UTF-8.")
-         
+        
         elif seleccion == "Pegar Texto":
             texto_procesar = st.text_area("Pega tu texto aquí:", height=300)
         
