@@ -17,7 +17,11 @@ nltk.download('punkt')
 nltk.download('stopwords')
 
 # Inicializar herramientas
-tool = language_tool_python.LanguageTool('es')
+# Usar el API público de LanguageTool
+tool = language_tool_python.LanguageTool('es', host='https://api.languagetoolplus.com')
+
+# ... resto del código sigue igual ...
+
 
 # Inicializar el modelo de Hugging Face para restauración de puntuación
 @st.cache_resource
