@@ -33,11 +33,16 @@ def corregir_texto(texto, idioma='es'):
 
     return texto_modificado
 
-# Función para procesar el documento de Word
+# Función para procesar el documento de Word con barra de progreso
 def procesar_documento(doc_bytes):
     doc = Document(BytesIO(doc_bytes))
     doc_corregido = Document()
 
+    total_elements = len(doc.paragraphs) + len(doc.tables)
+    progreso = st.progress(0)
+    contador = 0
+
+    # Procesar párrafos
     for para in doc.paragraphs:
         texto_original = para.text
         if texto_original.strip() != '':
@@ -50,7 +55,10 @@ def procesar_documento(doc_bytes):
         nuevo_para.style = para.style
         nuevo_para.add_run(texto_corregido)
 
-    # Copiar el contenido de las tablas si las hay
+        contador += 1
+        progreso.progress(contador / total_elements)
+
+    # Procesar tablas
     for table in doc.tables:
         nueva_tabla = doc_corregido.add_table(rows=0, cols=0)
         for row in table.rows:
@@ -64,11 +72,14 @@ def procesar_documento(doc_bytes):
                 else:
                     texto_corregido = texto_original
                 nueva_fila.cells[idx].text = texto_corregido
+        contador += 1
+        progreso.progress(contador / total_elements)
 
     # Guardar el documento corregido en un buffer
     buffer = BytesIO()
     doc_corregido.save(buffer)
     buffer.seek(0)
+    progreso.empty()  # Ocultar la barra de progreso
     return buffer
 
 # Configuración de la aplicación Streamlit
